@@ -5,10 +5,13 @@
 package tiff
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"io"
+
+	image2 "github.com/sixgill/tiff/image"
 )
 
 func (p *IFD) BlocksAcross() int {
@@ -206,44 +209,77 @@ func (p *IFD) decodeBlock(buf []byte, dst image.Image, r image.Rectangle) (err e
 
 	switch p.ImageType() {
 	case ImageType_Gray, ImageType_GrayInvert, ImageType_Bilevel, ImageType_BilevelInvert:
-		if p.Depth() == 16 {
-			var off int
-			img := dst.(*image.Gray16)
-			for y := ymin; y < rMaxY; y++ {
-				for x := xmin; x < rMaxX; x++ {
-					if off+2 > len(buf) {
-						err = fmt.Errorf("tiff: IFD.decodeBlock, not enough pixel data")
-						return
+
+		// GAZ hack for float32 GeoTIFF
+		sF, _ := p.TagGetter().GetSampleFormat()
+		if sF[0] == int64(TagValue_SampleFormatType_Float) {
+			fmt.Println("Depth:", p.Depth())
+			if p.Depth() == 32 {
+				var off int
+				img := dst.(*image2.GrayFloat32)
+				for y := ymin; y < rMaxY; y++ {
+					for x := xmin; x < rMaxX; x++ {
+						if off+2 > len(buf) {
+							err = fmt.Errorf("tiff: IFD.decodeBlock, not enough pixel data")
+							return
+						}
+						v := p.Header.ByteOrder.Uint16(buf[off : off+2])
+						off += 2
+						if p.ImageType() == ImageType_GrayInvert {
+							v = 0xffff - v
+						}
+						img.SetGray16(x, y, color.GrayFloat32{v})
 					}
-					v := p.Header.ByteOrder.Uint16(buf[off : off+2])
-					off += 2
-					if p.ImageType() == ImageType_GrayInvert {
-						v = 0xffff - v
-					}
-					img.SetGray16(x, y, color.Gray16{v})
 				}
+			} else {
+				return errors.New("Can't handle non-32-bit floats, sorry.")
 			}
+
 		} else {
-			bpp := uint(p.Depth())
-			bitReader := newBitsReader(buf)
-			img := dst.(*image.Gray)
-			max := uint32((1 << uint(p.Depth())) - 1)
-			for y := ymin; y < rMaxY; y++ {
-				for x := xmin; x < rMaxX; x++ {
-					v, ok := bitReader.ReadBits(bpp)
-					if !ok {
-						err = fmt.Errorf("tiff: IFD.decodeBlock, not enough pixel data")
-						return
+
+			if p.Depth() == 16 {
+				var off int
+				img := dst.(*image.Gray16)
+				for y := ymin; y < rMaxY; y++ {
+					for x := xmin; x < rMaxX; x++ {
+						if off+2 > len(buf) {
+							err = fmt.Errorf("tiff: IFD.decodeBlock, not enough pixel data")
+							return
+						}
+						v := p.Header.ByteOrder.Uint16(buf[off : off+2])
+						off += 2
+						if p.ImageType() == ImageType_GrayInvert {
+							v = 0xffff - v
+						}
+						img.SetGray16(x, y, color.Gray16{v})
 					}
-					v = v * 0xff / max
-					if p.ImageType() == ImageType_GrayInvert {
-						v = 0xff - v
-					}
-					img.SetGray(x, y, color.Gray{uint8(v)})
 				}
-				bitReader.flushBits()
+			} else {
+				bpp := uint(p.Depth())
+				fmt.Println("bpp:", bpp)
+				bitReader := newBitsReader(buf)
+				img := dst.(*image.Gray)
+				max := uint32((1 << uint(p.Depth())) - 1)
+				for y := ymin; y < rMaxY; y++ {
+					for x := xmin; x < rMaxX; x++ {
+						v, ok := bitReader.ReadBits(bpp)
+						if !ok {
+							err = fmt.Errorf("tiff: IFD.decodeBlock, not enough pixel data")
+							return
+						}
+						//					fmt.Println("v:", v)
+						v = v * 0xff / max
+						if p.ImageType() == ImageType_GrayInvert {
+							v = 0xff - v
+						}
+						img.SetGray(x, y, color.Gray{uint8(v)})
+					}
+					bitReader.flushBits()
+				}
 			}
+
 		}
+
 	case ImageType_Paletted:
 		bpp := uint(p.Depth())
 		bitReader := newBitsReader(buf)
