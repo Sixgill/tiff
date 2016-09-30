@@ -217,7 +217,6 @@ func (p *IFD) decodeBlock(buf []byte, dst image.Image, r image.Rectangle) (err e
 		// GAZ hack for float32 GeoTIFF
 		sF, _ := p.TagGetter().GetSampleFormat()
 		if sF[0] == int64(TagValue_SampleFormatType_Float) {
-			fmt.Println("Depth:", p.Depth())
 			if p.Depth() == 32 {
 				var off int
 				img := dst.(*image2.GrayFloat32)
