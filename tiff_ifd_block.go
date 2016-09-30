@@ -10,8 +10,12 @@ import (
 	"image"
 	"image/color"
 	"io"
+	"math"
+
+	"encoding/binary"
 
 	image2 "github.com/sixgill/tiff/image"
+	color2 "github.com/sixgill/tiff/image/color"
 )
 
 func (p *IFD) BlocksAcross() int {
@@ -223,12 +227,12 @@ func (p *IFD) decodeBlock(buf []byte, dst image.Image, r image.Rectangle) (err e
 							err = fmt.Errorf("tiff: IFD.decodeBlock, not enough pixel data")
 							return
 						}
-						v := p.Header.ByteOrder.Uint16(buf[off : off+2])
+						v := math.Float32frombits(binary.BigEndian.Uint32(buf[off : off+4]))
 						off += 2
 						if p.ImageType() == ImageType_GrayInvert {
 							v = 0xffff - v
 						}
-						img.SetGray16(x, y, color.GrayFloat32{v})
+						img.SetGrayFloat32(x, y, color2.GrayFloat32{v})
 					}
 				}
 			} else {
@@ -267,7 +271,6 @@ func (p *IFD) decodeBlock(buf []byte, dst image.Image, r image.Rectangle) (err e
 							err = fmt.Errorf("tiff: IFD.decodeBlock, not enough pixel data")
 							return
 						}
-						//					fmt.Println("v:", v)
 						v = v * 0xff / max
 						if p.ImageType() == ImageType_GrayInvert {
 							v = 0xff - v

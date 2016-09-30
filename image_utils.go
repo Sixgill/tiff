@@ -7,6 +7,8 @@ package tiff
 import (
 	"fmt"
 	"image"
+
+	image2 "github.com/sixgill/tiff/image"
 )
 
 func newImageWithIFD(r image.Rectangle, ifd *IFD) (m image.Image, err error) {
@@ -14,11 +16,26 @@ func newImageWithIFD(r image.Rectangle, ifd *IFD) (m image.Image, err error) {
 	case ImageType_Bilevel, ImageType_BilevelInvert:
 		m = image.NewGray(r)
 	case ImageType_Gray, ImageType_GrayInvert:
-		if ifd.Depth() == 16 {
+
+		// GAZ hack for float32 GeoTIFF
+		switch ifd.Depth() {
+
+		case 32:
+			sF, _ := ifd.TagGetter().GetSampleFormat()
+			if sF[0] == int64(TagValue_SampleFormatType_Float) {
+				m = image2.NewGrayFloat32(r)
+			} else {
+				err = fmt.Errorf("Can't handle non-32-bit floats, sorry.")
+				return
+			}
+
+		case 16:
 			m = image.NewGray16(r)
-		} else {
+
+		default:
 			m = image.NewGray(r)
 		}
+
 	case ImageType_Paletted:
 		m = image.NewPaletted(r, ifd.ColorMap())
 	case ImageType_NRGBA:
